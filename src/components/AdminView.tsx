@@ -99,7 +99,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
     }
     const success = onAdminLogin(pinInput.trim());
     if (!success) {
-      setLoginError('PIN atau Email tidak valid. (Gunakan PIN default: 123456)');
+      setLoginError('PIN atau Email tidak valid. (Gunakan PIN default: duasembilan)');
     } else {
       setLoginError('');
       setPinInput('');
@@ -143,12 +143,12 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 required
                 value={pinInput}
                 onChange={(e) => setPinInput(e.target.value)}
-                placeholder="Masukkan PIN (Default: 123456)"
+                placeholder="Masukkan PIN (Default: duasembilan)"
                 className="w-full text-xs font-medium pl-9 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:outline-hidden"
               />
             </div>
             <p className="text-[11px] text-slate-400 mt-1.5">
-              * Petunjuk verifikator: PIN contoh terpasang adalah <code className="font-mono font-bold text-blue-700 bg-blue-50 px-1 py-0.5 rounded">123456</code>.
+              * Petunjuk verifikator: PIN contoh terpasang adalah <code className="font-mono font-bold text-blue-700 bg-blue-50 px-1 py-0.5 rounded">duasembilan</code>.
             </p>
           </div>
 
@@ -430,7 +430,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   email: '',
                   role: 'Admin Proposal',
                   active: true,
-                  pin: '123456',
+                  pin: 'duasembilan',
                 });
                 setIsAdminUserModalOpen(true);
               }}
