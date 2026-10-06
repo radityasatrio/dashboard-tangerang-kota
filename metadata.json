@@ -1,0 +1,8 @@
+{
+  "name": "Dashboard Tangerang Kota",
+  "description": "Dashboard Interaktif Kota Tangerang terintegrasi dengan Google Drive dan Google Sheets untuk agenda, proposal, dan pelaporan.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
