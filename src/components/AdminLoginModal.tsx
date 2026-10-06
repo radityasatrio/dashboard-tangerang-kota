@@ -41,7 +41,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
       setPinOrEmail('');
       onClose();
     } else {
-      setErrorMsg('PIN atau Email tidak cocok. Coba gunakan PIN default: 123456');
+      setErrorMsg('PIN atau Email tidak cocok. Coba gunakan PIN default: duasembilan');
     }
   };
 
@@ -99,7 +99,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
                 required
                 value={pinOrEmail}
                 onChange={(e) => setPinOrEmail(e.target.value)}
-                placeholder="Masukkan PIN (Default: 123456)"
+                placeholder="Masukkan PIN (Default: duasembilan)"
                 className="w-full text-xs font-medium pl-9 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:outline-hidden"
               />
             </div>
@@ -124,7 +124,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
               <button
                 key={adm.id}
                 type="button"
-                onClick={() => handleQuickLogin(adm.pin || '123456')}
+                onClick={() => handleQuickLogin(adm.pin || 'duasembilan')}
                 className="w-full flex items-center justify-between p-2.5 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 text-left transition-all cursor-pointer group"
               >
                 <div>
