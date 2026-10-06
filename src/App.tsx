@@ -259,21 +259,24 @@ export default function App() {
   };
 
   // Sync Sensus Handler
-  const handleSyncSensus = useCallback(async (customUrl?: string) => {
+  const handleSyncSensus = useCallback(async (customUrl?: string, isManualAction: boolean = false) => {
     setIsSyncingSensus(true);
     try {
       const targetUrl = customUrl || sensusSheetUrl;
       const res = await fetchSensusFromSpreadsheet(targetUrl);
-      if (res.success && res.data && res.data.length > 0) {
+      if (res.data && res.data.length > 0) {
         setSensusList(res.data);
-        localStorage.setItem(STORAGE_KEYS.LOCAL_SENSUS, JSON.stringify(res.data));
-        addToast('success', 'Sensus Berhasil Disinkronkan', res.message);
-      } else {
-        addToast('info', 'Status Sinkronisasi', res.message);
+        if (!res.usingMaster) {
+          localStorage.setItem(STORAGE_KEYS.LOCAL_SENSUS, JSON.stringify(res.data));
+        }
+      }
+      // Jangan tampilkan popup/toast peringatan galat jika data berhasil diambil atau saat memakai master data.
+      // Hanya tampilkan notifikasi jika user secara manual menekan tombol sinkronisasi dan data baru remote berhasil dimuat.
+      if (isManualAction && res.success && !res.usingMaster) {
+        addToast('success', 'Sensus Terkini Disinkronkan', res.message);
       }
     } catch (err: any) {
-      console.warn('Gagal sinkronisasi sensus:', err);
-      addToast('error', 'Gagal Sinkronisasi', 'Tidak dapat mengambil data terbaru dari spreadsheet.');
+      console.warn('Sync sensus info:', err);
     } finally {
       setIsSyncingSensus(false);
     }
@@ -283,12 +286,12 @@ export default function App() {
     setSensusSheetUrl(newUrl);
     localStorage.setItem(STORAGE_KEYS.SENSUS_SHEET_URL, newUrl);
     addToast('success', 'Tautan Sensus Disimpan', 'Tautan spreadsheet sensus berhasil diperbarui.');
-    handleSyncSensus(newUrl);
+    handleSyncSensus(newUrl, true);
   };
 
-  // Auto-sync sensus on mount
+  // Auto-sync sensus on mount (silent, tanpa popup toast)
   useEffect(() => {
-    handleSyncSensus();
+    handleSyncSensus(undefined, false);
   }, [handleSyncSensus]);
 
   // Add Agenda Handler
@@ -494,7 +497,7 @@ export default function App() {
           {currentTab === 'sensus' && (
             <SensusJamaahView
               sensusList={sensusList}
-              onSyncSensus={handleSyncSensus}
+              onSyncSensus={(customUrl) => handleSyncSensus(customUrl, true)}
               isSyncing={isSyncingSensus}
               sensusSheetUrl={sensusSheetUrl}
               onSaveSensusUrl={handleSaveSensusUrl}
