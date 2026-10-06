@@ -1,10 +1,13 @@
 import { TangerangConfig } from './types';
 
+export const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxy2yu2LKiJKhdHWd114_duDsaJds2POt0pYtsK862-ojd8KI9juJdBNq6ETTDKDErGXA/exec';
+export const GAS_API_URL = GOOGLE_SCRIPT_URL;
+
 export const DEFAULT_CONFIG: TangerangConfig = {
   spreadsheetId: '1NkJikjEDdJf6EG_t85ynGr-L6B4HvXOml_J-GihJrzM',
   sheetTabGid: '172820086',
   driveFolderId: '1HvlJnpjhDuzxwyRGFMYtu2h1DWHyblmr',
-  appsScriptUrl: 'https://script.google.com/macros/s/AKfycbxgGaIeT5DUI3MGEE-va3fzgVThrITG48KY61VcZT8SrCux8f8QRI6bykqo5E6NIa_a/exec',
+  appsScriptUrl: GOOGLE_SCRIPT_URL,
   sensusSheetUrl: 'https://docs.google.com/spreadsheets/d/1NkJikjEDdJf6EG_t85ynGr-L6B4HvXOml_J-GihJrzM/export?format=csv&gid=0',
 };
 

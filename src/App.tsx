@@ -81,7 +81,13 @@ export default function App() {
 
   // Config & Apps Script Web App URL
   const [appsScriptUrl, setAppsScriptUrl] = useState<string>(() => {
-    return localStorage.getItem(STORAGE_KEYS.APPS_SCRIPT_URL) || DEFAULT_CONFIG.appsScriptUrl || '';
+    const defaultUrl = DEFAULT_CONFIG.appsScriptUrl || '';
+    const saved = localStorage.getItem(STORAGE_KEYS.APPS_SCRIPT_URL);
+    if (!saved || saved.includes('AKfycbxgGaIeT5DUI3MGEE-va3fzgVThrITG48KY61VcZT8SrCux8f8QRI6bykqo5E6NIa_a')) {
+      localStorage.setItem(STORAGE_KEYS.APPS_SCRIPT_URL, defaultUrl);
+      return defaultUrl;
+    }
+    return saved;
   });
 
   // Data states with persistence

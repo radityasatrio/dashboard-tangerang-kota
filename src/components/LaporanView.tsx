@@ -19,8 +19,27 @@ import { LaporanItem, LaporanCategory, LaporanStatus } from '../services/types';
 import { 
   LAPORAN_DESA_LIST, 
   LAPORAN_TIM_LIST, 
-  DEFAULT_CONFIG 
+  DEFAULT_CONFIG,
+  GOOGLE_SCRIPT_URL
 } from '../services/config';
+import { uploadLaporanViaAppsScript } from '../services/workspace';
+
+export const BULAN_LIST = [
+  'Januari',
+  'Februari',
+  'Maret',
+  'April',
+  'Mei',
+  'Juni',
+  'Juli',
+  'Agustus',
+  'September',
+  'Oktober',
+  'November',
+  'Desember',
+] as const;
+
+export const TAHUN_LIST = ['2024', '2025', '2026', '2027', '2028', '2029'] as const;
 
 interface LaporanViewProps {
   laporans: LaporanItem[];
@@ -41,16 +60,18 @@ export const LaporanView: React.FC<LaporanViewProps> = ({
   const [selectedType, setSelectedType] = useState<string>('Semua');
   const [selectedEntity, setSelectedEntity] = useState<string>('Semua');
   const [selectedStatus, setSelectedStatus] = useState<string>('Semua');
-  const [selectedPeriod, setSelectedPeriod] = useState<string>('Semua');
+  const [selectedMonth, setSelectedMonth] = useState<string>('Semua');
+  const [selectedYear, setSelectedYear] = useState<string>('Semua');
   const [searchKeyword, setSearchKeyword] = useState<string>('');
 
-  // Upload Modal Form States
+  // Upload Modal Form States (Bulan & Tahun Dropdown)
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formType, setFormType] = useState<LaporanCategory>('Laporan Desa');
   const [formEntity, setFormEntity] = useState<string>(LAPORAN_DESA_LIST[0]);
   const [formStatus, setFormStatus] = useState<LaporanStatus>('Terverifikasi');
   const [title, setTitle] = useState('');
-  const [period, setPeriod] = useState('Oktober 2026');
+  const [formMonth, setFormMonth] = useState<string>('Oktober');
+  const [formYear, setFormYear] = useState<string>('2026');
   const [description, setDescription] = useState('');
   const [file, setFile] = useState<File | null>(null);
 
@@ -61,7 +82,8 @@ export const LaporanView: React.FC<LaporanViewProps> = ({
     setSelectedType('Semua');
     setSelectedEntity('Semua');
     setSelectedStatus('Semua');
-    setSelectedPeriod('Semua');
+    setSelectedMonth('Semua');
+    setSelectedYear('Semua');
     setSearchKeyword('');
   };
 
@@ -80,8 +102,9 @@ export const LaporanView: React.FC<LaporanViewProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !period.trim() || !file) {
-      setFormError('Mohon lengkapi judul laporan, periode, dan pilih berkas.');
+    const computedPeriod = `${formMonth} ${formYear}`;
+    if (!title.trim() || !formMonth || !formYear || !file) {
+      setFormError('Mohon lengkapi judul laporan, pilih periode (bulan & tahun), dan pilih berkas.');
       return;
     }
 
@@ -95,47 +118,56 @@ export const LaporanView: React.FC<LaporanViewProps> = ({
       const entityClean = formEntity.replace(/[^a-zA-Z0-9]/g, '');
       const driveFileName = `[${tagPrefix}_${entityClean}_${todayStr}]_${cleanFileName}`;
 
-      const driveUrl = `https://drive.google.com/drive/folders/${DEFAULT_CONFIG.driveFolderId}`;
-      const driveId = 'drive-lap-' + Date.now();
+      let driveUrl = `https://drive.google.com/drive/folders/${DEFAULT_CONFIG.driveFolderId}`;
+      let driveId = 'drive-lap-' + Date.now();
 
-      if (appsScriptUrl) {
-        try {
-          const reader = new FileReader();
-          const base64Promise = new Promise<string>((resolve) => {
-            reader.onload = () => {
-              const res = reader.result as string;
-              resolve(res.split(',')[1] || '');
-            };
-            reader.readAsDataURL(file);
-          });
-          const fileBase64 = await base64Promise;
+      // Read file to Base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve) => {
+        reader.onload = () => {
+          const res = reader.result as string;
+          resolve(res.split(',')[1] || '');
+        };
+        reader.readAsDataURL(file);
+      });
+      const fileBase64 = await base64Promise;
 
-          await fetch(appsScriptUrl, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              action: 'upload_laporan',
-              id: 'lap-' + Date.now(),
-              title: title.trim(),
-              category: formType,
-              entityName: formEntity,
-              status: formStatus,
-              period: period.trim(),
-              description: description.trim(),
-              opd: `${formType} - ${formEntity}`,
-              fileName: driveFileName,
-              fileSize: (file.size / (1024 * 1024)).toFixed(1) + ' MB',
-              fileBase64,
-              fileMimeType: file.type || 'application/pdf',
-            }),
-          });
-        } catch (gasErr) {
-          console.warn('Apps Script Web App request noted:', gasErr);
+      const targetScriptUrl = appsScriptUrl || GOOGLE_SCRIPT_URL;
+
+      try {
+        const gasResult = await uploadLaporanViaAppsScript(
+          {
+            action: 'upload_laporan',
+            id: 'lap-' + Date.now(),
+            title: title.trim(),
+            category: formType,
+            entityName: formEntity,
+            status: formStatus,
+            period: computedPeriod,
+            description: description.trim(),
+            opd: `${formType} - ${formEntity}`,
+            fileName: driveFileName,
+            fileSize: (file.size / (1024 * 1024)).toFixed(1) + ' MB',
+            fileBase64,
+            fileMimeType: file.type || 'application/pdf',
+            folderId: DEFAULT_CONFIG.driveFolderId,
+            uploadedBy: `Admin ${formEntity}`,
+          },
+          targetScriptUrl
+        );
+
+        if (gasResult.fileUrl) {
+          driveUrl = gasResult.fileUrl;
         }
+        if (gasResult.fileId) {
+          driveId = gasResult.fileId;
+        }
+      } catch (gasErr) {
+        console.warn('Apps Script upload note:', gasErr);
       }
+
+      const monthIndex = BULAN_LIST.indexOf(formMonth as any);
+      const monthNumStr = monthIndex >= 0 ? String(monthIndex + 1).padStart(2, '0') : '01';
 
       const newLaporan: LaporanItem = {
         id: 'lap-' + Date.now(),
@@ -143,8 +175,8 @@ export const LaporanView: React.FC<LaporanViewProps> = ({
         category: formType,
         entityName: formEntity,
         status: formStatus,
-        period: period.trim(),
-        periodDate: new Date().toISOString().slice(0, 10),
+        period: computedPeriod,
+        periodDate: `${formYear}-${monthNumStr}-01`,
         description: description.trim(),
         opd: `${formType} - ${formEntity}`,
         fileName: driveFileName,
@@ -189,8 +221,11 @@ export const LaporanView: React.FC<LaporanViewProps> = ({
         }
       }
 
-      // 4. Period filter
-      if (selectedPeriod !== 'Semua' && !item.period.includes(selectedPeriod)) {
+      // 4. Period filter: Bulan & Tahun
+      if (selectedMonth !== 'Semua' && !item.period.toLowerCase().includes(selectedMonth.toLowerCase())) {
+        return false;
+      }
+      if (selectedYear !== 'Semua' && !item.period.includes(selectedYear)) {
         return false;
       }
 
@@ -209,13 +244,14 @@ export const LaporanView: React.FC<LaporanViewProps> = ({
 
       return true;
     });
-  }, [laporans, selectedType, selectedEntity, selectedStatus, selectedPeriod, searchKeyword]);
+  }, [laporans, selectedType, selectedEntity, selectedStatus, selectedMonth, selectedYear, searchKeyword]);
 
   const hasActiveFilters = 
     selectedType !== 'Semua' || 
     selectedEntity !== 'Semua' || 
     selectedStatus !== 'Semua' || 
-    selectedPeriod !== 'Semua' || 
+    selectedMonth !== 'Semua' || 
+    selectedYear !== 'Semua' || 
     searchKeyword.trim() !== '';
 
   // Render Status Badge
@@ -318,7 +354,7 @@ export const LaporanView: React.FC<LaporanViewProps> = ({
         </div>
 
         {/* Row 1: Dropdown Filters */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           {/* 1. Dropdown Nama Desa */}
           <div>
             <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
@@ -387,21 +423,41 @@ export const LaporanView: React.FC<LaporanViewProps> = ({
             </select>
           </div>
 
-          {/* 4. Dropdown Periode */}
+          {/* 4. Dropdown Bulan */}
           <div>
             <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-              Periode:
+              Bulan:
             </label>
             <select
-              value={selectedPeriod}
-              onChange={(e) => setSelectedPeriod(e.target.value)}
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
               className="w-full text-xs font-semibold p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 focus:outline-hidden"
             >
-              <option value="Semua">Semua Periode</option>
-              <option value="Oktober 2026">Oktober 2026</option>
-              <option value="September 2026">September 2026</option>
-              <option value="Agustus 2026">Agustus 2026</option>
-              <option value="Triwulan III 2026">Triwulan III 2026</option>
+              <option value="Semua">Semua Bulan</option>
+              {BULAN_LIST.map((bln) => (
+                <option key={bln} value={bln}>
+                  {bln}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 5. Dropdown Tahun */}
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+              Tahun:
+            </label>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              className="w-full text-xs font-semibold p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 focus:outline-hidden"
+            >
+              <option value="Semua">Semua Tahun</option>
+              {TAHUN_LIST.map((thn) => (
+                <option key={thn} value={thn}>
+                  {thn}
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -629,18 +685,51 @@ export const LaporanView: React.FC<LaporanViewProps> = ({
                 />
               </div>
 
-              {/* 5. Periode Laporan */}
+              {/* 5. Periode Laporan (Bulan & Tahun Dropdown) */}
               <div>
                 <label className="block font-bold text-slate-700 mb-1">
-                  5. Periode Laporan:
+                  5. Periode Laporan (Bulan & Tahun):
                 </label>
-                <input
-                  type="text"
-                  value={period}
-                  onChange={(e) => setPeriod(e.target.value)}
-                  placeholder="Contoh: Oktober 2026 / Triwulan III 2026"
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:outline-hidden"
-                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                      Pilih Bulan:
+                    </label>
+                    <select
+                      value={formMonth}
+                      onChange={(e) => setFormMonth(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:outline-hidden"
+                    >
+                      {BULAN_LIST.map((bln) => (
+                        <option key={bln} value={bln}>
+                          {bln}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                      Pilih Tahun:
+                    </label>
+                    <select
+                      value={formYear}
+                      onChange={(e) => setFormYear(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:outline-hidden"
+                    >
+                      {TAHUN_LIST.map((thn) => (
+                        <option key={thn} value={thn}>
+                          {thn}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-500">
+                  <span className="font-semibold">Periode Dokumen:</span>
+                  <span className="font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200 text-[11px]">
+                    {formMonth} {formYear}
+                  </span>
+                </div>
               </div>
 
               {/* 6. Ringkasan Deskripsi */}
