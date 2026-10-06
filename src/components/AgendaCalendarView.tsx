@@ -14,7 +14,8 @@ import {
   Info,
   Printer,
   FileDown,
-  RefreshCw
+  RefreshCw,
+  Lock
 } from 'lucide-react';
 import { AgendaItem } from '../services/types';
 import { TANGERANG_OPD_LIST } from '../services/config';
@@ -83,6 +84,10 @@ export const AgendaCalendarView: React.FC<AgendaCalendarViewProps> = ({
 
   // Handle cell click on date
   const handleDateClick = (day: number) => {
+    if (!isAuthenticated) {
+      onOpenLogin();
+      return;
+    }
     const formattedDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     setSelectedDate(formattedDate);
     setDate(formattedDate);
@@ -198,14 +203,18 @@ export const AgendaCalendarView: React.FC<AgendaCalendarViewProps> = ({
           <button
             type="button"
             onClick={() => {
+              if (!isAuthenticated) {
+                onOpenLogin();
+                return;
+              }
               const todayStr = new Date().toISOString().split('T')[0];
               setDate(todayStr);
               setIsModalOpen(true);
             }}
             className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-all cursor-pointer"
           >
-            <Plus className="w-4 h-4" />
-            Tambah Agenda
+            {isAuthenticated ? <Plus className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+            {isAuthenticated ? 'Tambah Agenda' : 'Tambah Agenda (Admin)'}
           </button>
         </div>
       </div>

@@ -12,7 +12,8 @@ import {
   CheckCircle2,
   Clock,
   AlertCircle,
-  Calendar
+  Calendar,
+  Lock
 } from 'lucide-react';
 import { LaporanItem, LaporanCategory, LaporanStatus } from '../services/types';
 import { 
@@ -26,6 +27,7 @@ interface LaporanViewProps {
   onLaporanAdded: (laporan: LaporanItem) => void;
   appsScriptUrl?: string;
   isAdminLoggedIn?: boolean;
+  onOpenAdminLogin?: () => void;
 }
 
 export const LaporanView: React.FC<LaporanViewProps> = ({
@@ -33,6 +35,7 @@ export const LaporanView: React.FC<LaporanViewProps> = ({
   onLaporanAdded,
   appsScriptUrl = DEFAULT_CONFIG.appsScriptUrl,
   isAdminLoggedIn = false,
+  onOpenAdminLogin,
 }) => {
   // Filter States
   const [selectedType, setSelectedType] = useState<string>('Semua');
@@ -278,6 +281,10 @@ export const LaporanView: React.FC<LaporanViewProps> = ({
         <button
           type="button"
           onClick={() => {
+            if (!isAdminLoggedIn) {
+              onOpenAdminLogin?.();
+              return;
+            }
             setFormType('Laporan Desa');
             setFormEntity(LAPORAN_DESA_LIST[0]);
             setFormStatus('Terverifikasi');
@@ -285,8 +292,8 @@ export const LaporanView: React.FC<LaporanViewProps> = ({
           }}
           className="flex items-center justify-center gap-2 px-4 py-2.5 bg-teal-700 hover:bg-teal-800 text-white text-xs sm:text-sm font-semibold rounded-xl shadow-md transition-all cursor-pointer"
         >
-          <UploadCloud className="w-4 h-4" />
-          Unggah Laporan Baru
+          {isAdminLoggedIn ? <UploadCloud className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+          <span>{isAdminLoggedIn ? 'Unggah Laporan Baru' : 'Unggah Laporan (Admin)'}</span>
         </button>
       </div>
 

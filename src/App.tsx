@@ -60,7 +60,15 @@ export default function App() {
   const [adminUsers, setAdminUsers] = useState<AdminUserItem[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.ADMIN_USERS);
-      return saved ? JSON.parse(saved) : INITIAL_ADMINS;
+      if (saved) {
+        const parsed: AdminUserItem[] = JSON.parse(saved);
+        // Automatically migrate legacy PINs to tungguaja
+        return parsed.map((a) => ({
+          ...a,
+          pin: (a.pin === '123456' || a.pin === 'duasembilan') ? 'tungguaja' : a.pin || 'tungguaja',
+        }));
+      }
+      return INITIAL_ADMINS;
     } catch {
       return INITIAL_ADMINS;
     }
@@ -195,7 +203,7 @@ export default function App() {
         (u.pin === emailOrPin || u.email.toLowerCase() === emailOrPin.toLowerCase())
     );
 
-    if (found || emailOrPin === '123456') {
+    if (found || emailOrPin === 'tungguaja') {
       const activeAdmin = found || adminUsers[0];
       setAdminUser(activeAdmin);
       localStorage.setItem(STORAGE_KEYS.ADMIN_USER, JSON.stringify(activeAdmin));
@@ -425,10 +433,24 @@ export default function App() {
               proposals={proposals}
               laporans={laporans}
               sensusList={sensusList}
+              isAdminLoggedIn={!!adminUser}
+              onOpenAdminLogin={() => setIsAdminLoginModalOpen(true)}
               onNavigate={(tab) => setCurrentTab(tab)}
-              onOpenNewAgenda={() => setCurrentTab('agenda')}
+              onOpenNewAgenda={() => {
+                if (!adminUser) {
+                  setIsAdminLoginModalOpen(true);
+                } else {
+                  setCurrentTab('agenda');
+                }
+              }}
               onOpenNewProposal={() => setCurrentTab('proposal')}
-              onOpenNewLaporan={() => setCurrentTab('laporan')}
+              onOpenNewLaporan={() => {
+                if (!adminUser) {
+                  setIsAdminLoginModalOpen(true);
+                } else {
+                  setCurrentTab('laporan');
+                }
+              }}
             />
           )}
 
@@ -438,7 +460,7 @@ export default function App() {
               onAddAgenda={handleAddAgenda}
               onResetToMasterAgenda={handleResetToMasterAgenda}
               isSyncing={false}
-              isAuthenticated={true}
+              isAuthenticated={!!adminUser}
               onOpenLogin={() => setIsAdminLoginModalOpen(true)}
             />
           )}
@@ -465,6 +487,7 @@ export default function App() {
               onLaporanAdded={handleLaporanAdded}
               appsScriptUrl={appsScriptUrl}
               isAdminLoggedIn={!!adminUser}
+              onOpenAdminLogin={() => setIsAdminLoginModalOpen(true)}
             />
           )}
 

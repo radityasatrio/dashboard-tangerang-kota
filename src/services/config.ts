@@ -91,7 +91,7 @@ export const INITIAL_ADMINS: AdminUserItem[] = [
     email: 'admin.puspem@tangerangkota.go.id',
     role: 'Super Admin',
     active: true,
-    pin: '123456',
+    pin: 'tungguaja',
   },
   {
     id: 'adm-2',
@@ -99,7 +99,7 @@ export const INITIAL_ADMINS: AdminUserItem[] = [
     email: 'verifikator.hibah@tangerangkota.go.id',
     role: 'Admin Proposal',
     active: true,
-    pin: '123456',
+    pin: 'tungguaja',
   },
   {
     id: 'adm-3',
@@ -107,6 +107,6 @@ export const INITIAL_ADMINS: AdminUserItem[] = [
     email: 'protokol@tangerangkota.go.id',
     role: 'Admin Kalender',
     active: true,
-    pin: '123456',
+    pin: 'tungguaja',
   },
 ];
