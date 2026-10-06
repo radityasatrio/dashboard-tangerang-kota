@@ -13,7 +13,8 @@ import {
   Clock,
   AlertCircle,
   Calendar,
-  Lock
+  Lock,
+  Trash2
 } from 'lucide-react';
 import { LaporanItem, LaporanCategory, LaporanStatus } from '../services/types';
 import { 
@@ -23,6 +24,7 @@ import {
   GOOGLE_SCRIPT_URL
 } from '../services/config';
 import { uploadLaporanViaAppsScript } from '../services/workspace';
+import { ConfirmModal } from './ConfirmModal';
 
 export const BULAN_LIST = [
   'Januari',
@@ -44,6 +46,7 @@ export const TAHUN_LIST = ['2024', '2025', '2026', '2027', '2028', '2029'] as co
 interface LaporanViewProps {
   laporans: LaporanItem[];
   onLaporanAdded: (laporan: LaporanItem) => void;
+  onDeleteLaporan?: (id: string) => void;
   appsScriptUrl?: string;
   isAdminLoggedIn?: boolean;
   onOpenAdminLogin?: () => void;
@@ -52,6 +55,7 @@ interface LaporanViewProps {
 export const LaporanView: React.FC<LaporanViewProps> = ({
   laporans,
   onLaporanAdded,
+  onDeleteLaporan,
   appsScriptUrl = DEFAULT_CONFIG.appsScriptUrl,
   isAdminLoggedIn = false,
   onOpenAdminLogin,
@@ -63,6 +67,10 @@ export const LaporanView: React.FC<LaporanViewProps> = ({
   const [selectedMonth, setSelectedMonth] = useState<string>('Semua');
   const [selectedYear, setSelectedYear] = useState<string>('Semua');
   const [searchKeyword, setSearchKeyword] = useState<string>('');
+
+  // Delete modal state
+  const [itemToDelete, setItemToDelete] = useState<LaporanItem | null>(null);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   // Upload Modal Form States (Bulan & Tahun Dropdown)
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -564,7 +572,7 @@ export const LaporanView: React.FC<LaporanViewProps> = ({
                   </div>
                 </div>
 
-                {/* Actions: Open in Google Drive (Khusus Admin) */}
+                {/* Actions: Open in Google Drive & Hapus Laporan (Khusus Admin) */}
                 {isAdminLoggedIn && (
                   <div className="shrink-0 flex items-center gap-2 self-start md:self-center">
                     <a
@@ -578,6 +586,19 @@ export const LaporanView: React.FC<LaporanViewProps> = ({
                       <span>Buka di Drive</span>
                       <ExternalLink className="w-3 h-3 text-slate-400" />
                     </a>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setItemToDelete(item);
+                        setIsDeleteConfirmOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition-all shadow-2xs cursor-pointer active:scale-95"
+                      title="Hapus Dokumen Laporan"
+                    >
+                      <Trash2 className="w-4 h-4 text-rose-600" />
+                      <span>Hapus</span>
+                    </button>
                   </div>
                 )}
               </div>
@@ -805,6 +826,27 @@ export const LaporanView: React.FC<LaporanViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={isDeleteConfirmOpen}
+        title="Hapus Dokumen Laporan"
+        message={`Apakah Anda yakin ingin menghapus laporan "${itemToDelete?.title || ''}" (${itemToDelete?.entityName || ''})? Dokumen ini akan dihapus dari daftar sistem.`}
+        confirmLabel="Ya, Hapus Laporan"
+        cancelLabel="Batal"
+        isDestructive={true}
+        onConfirm={() => {
+          if (itemToDelete && onDeleteLaporan) {
+            onDeleteLaporan(itemToDelete.id);
+          }
+          setIsDeleteConfirmOpen(false);
+          setItemToDelete(null);
+        }}
+        onCancel={() => {
+          setIsDeleteConfirmOpen(false);
+          setItemToDelete(null);
+        }}
+      />
     </div>
   );
 };

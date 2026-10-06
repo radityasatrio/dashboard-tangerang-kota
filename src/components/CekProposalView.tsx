@@ -5,7 +5,8 @@ import {
   CheckCircle2, 
   AlertCircle, 
   XCircle, 
-  Edit3 
+  Edit3,
+  Trash2
 } from 'lucide-react';
 import { ProposalItem, ProposalStatus } from '../services/types';
 import { ConfirmModal } from './ConfirmModal';
@@ -13,6 +14,7 @@ import { ConfirmModal } from './ConfirmModal';
 interface CekProposalViewProps {
   proposals: ProposalItem[];
   onUpdateStatus: (ticketNumber: string, newStatus: ProposalStatus, notes: string) => Promise<void>;
+  onDeleteProposal?: (idOrTicket: string) => void;
   onOpenAdminLogin: () => void;
   isAdminLoggedIn: boolean;
 }
@@ -20,6 +22,7 @@ interface CekProposalViewProps {
 export const CekProposalView: React.FC<CekProposalViewProps> = ({
   proposals,
   onUpdateStatus,
+  onDeleteProposal,
   onOpenAdminLogin,
   isAdminLoggedIn,
 }) => {
@@ -31,6 +34,10 @@ export const CekProposalView: React.FC<CekProposalViewProps> = ({
   const [newStatus, setNewStatus] = useState<ProposalStatus>('Sedang Ditinjau');
   const [statusNotes, setStatusNotes] = useState('');
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+
+  // Proposal delete states (Khusus Admin)
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [proposalToDelete, setProposalToDelete] = useState<ProposalItem | null>(null);
 
   const getStatusBadge = (status: ProposalStatus) => {
     switch (status) {
@@ -170,6 +177,21 @@ export const CekProposalView: React.FC<CekProposalViewProps> = ({
                 <Edit3 className="w-3.5 h-3.5 text-blue-600" />
                 {isAdminLoggedIn ? 'Ubah Status Verifikator' : 'Login Admin untuk Ubah Status'}
               </button>
+
+              {isAdminLoggedIn && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProposalToDelete(selectedProposal);
+                    setIsDeleteConfirmOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-semibold text-xs rounded-xl transition-colors cursor-pointer"
+                  title="Hapus proposal ini"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Hapus Proposal</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -350,7 +372,7 @@ export const CekProposalView: React.FC<CekProposalViewProps> = ({
                     <td className="py-3 px-4 whitespace-nowrap">
                       {getStatusBadge(item.status)}
                     </td>
-                    <td className="py-3 px-4 whitespace-nowrap text-center">
+                    <td className="py-3 px-4 whitespace-nowrap text-center space-x-1.5">
                       <button
                         type="button"
                         onClick={(e) => {
@@ -361,6 +383,20 @@ export const CekProposalView: React.FC<CekProposalViewProps> = ({
                       >
                         Detail
                       </button>
+                      {isAdminLoggedIn && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setProposalToDelete(item);
+                            setIsDeleteConfirmOpen(true);
+                          }}
+                          className="px-2.5 py-1 text-xs font-semibold text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 rounded-md transition-colors"
+                          title="Hapus proposal"
+                        >
+                          Hapus
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -433,7 +469,7 @@ export const CekProposalView: React.FC<CekProposalViewProps> = ({
         </div>
       )}
 
-      {/* Confirmation Dialog */}
+      {/* Confirmation Dialog for Status Update */}
       <ConfirmModal
         isOpen={isConfirmOpen}
         title="Konfirmasi Perubahan Status Proposal"
@@ -442,6 +478,33 @@ export const CekProposalView: React.FC<CekProposalViewProps> = ({
         cancelLabel="Batal"
         onConfirm={handleConfirmUpdate}
         onCancel={() => setIsConfirmOpen(false)}
+      />
+
+      {/* Confirmation Dialog for Delete Proposal (Khusus Admin) */}
+      <ConfirmModal
+        isOpen={isDeleteConfirmOpen}
+        title="Hapus Pengajuan Proposal"
+        message={`Apakah Anda yakin ingin menghapus proposal "${proposalToDelete?.title}" (No. Tiket: ${proposalToDelete?.ticketNumber}) dari ${proposalToDelete?.applicantName}? Dokumen dan data proposal ini akan dihapus dari antrean.`}
+        confirmLabel="Ya, Hapus Proposal"
+        cancelLabel="Batal"
+        isDestructive={true}
+        onConfirm={() => {
+          if (proposalToDelete && onDeleteProposal) {
+            onDeleteProposal(proposalToDelete.ticketNumber || proposalToDelete.id);
+            if (
+              selectedProposal?.id === proposalToDelete.id ||
+              selectedProposal?.ticketNumber === proposalToDelete.ticketNumber
+            ) {
+              setSelectedProposal(null);
+            }
+          }
+          setIsDeleteConfirmOpen(false);
+          setProposalToDelete(null);
+        }}
+        onCancel={() => {
+          setIsDeleteConfirmOpen(false);
+          setProposalToDelete(null);
+        }}
       />
     </div>
   );

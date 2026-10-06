@@ -63,4 +63,5 @@ export interface TangerangConfig {
   driveFolderId: string;
   appsScriptUrl?: string;
   sensusSheetUrl?: string;
+  calendarCsvUrl?: string;
 }

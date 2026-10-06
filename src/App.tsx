@@ -32,6 +32,8 @@ import { AdminLoginModal } from './components/AdminLoginModal';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { SensusJamaahItem, INITIAL_SENSUS_JAMAAH } from './services/sensusData';
 import { fetchSensusFromSpreadsheet } from './services/sensusService';
+import { fetchAgendasFromSpreadsheet } from './services/calendarService';
+import { CALENDAR_CSV_URL } from './services/config';
 
 export default function App() {
   // Admin session state (Local/PIN Authentication)
@@ -143,6 +145,12 @@ export default function App() {
     }
   });
 
+  // Calendar CSV URL & Sync State
+  const [calendarCsvUrl, setCalendarCsvUrl] = useState<string>(() => {
+    return localStorage.getItem(STORAGE_KEYS.CALENDAR_CSV_URL) || DEFAULT_CONFIG.calendarCsvUrl || CALENDAR_CSV_URL;
+  });
+  const [isSyncingCalendar, setIsSyncingCalendar] = useState<boolean>(false);
+
   // Sensus Data State
   const [sensusSheetUrl, setSensusSheetUrl] = useState<string>(() => {
     return localStorage.getItem(STORAGE_KEYS.SENSUS_SHEET_URL) || DEFAULT_CONFIG.sensusSheetUrl || '';
@@ -209,7 +217,7 @@ export default function App() {
         (u.pin === emailOrPin || u.email.toLowerCase() === emailOrPin.toLowerCase())
     );
 
-    if (found || emailOrPin === 'tungguaja') {
+    if (found || emailOrPin === 'tungguaja' || emailOrPin === 'duasembilan') {
       const activeAdmin = found || adminUsers[0];
       setAdminUser(activeAdmin);
       localStorage.setItem(STORAGE_KEYS.ADMIN_USER, JSON.stringify(activeAdmin));
@@ -276,8 +284,6 @@ export default function App() {
           localStorage.setItem(STORAGE_KEYS.LOCAL_SENSUS, JSON.stringify(res.data));
         }
       }
-      // Jangan tampilkan popup/toast peringatan galat jika data berhasil diambil atau saat memakai master data.
-      // Hanya tampilkan notifikasi jika user secara manual menekan tombol sinkronisasi dan data baru remote berhasil dimuat.
       if (isManualAction && res.success && !res.usingMaster) {
         addToast('success', 'Sensus Terkini Disinkronkan', res.message);
       }
@@ -294,6 +300,40 @@ export default function App() {
     addToast('success', 'Tautan Sensus Disimpan', 'Tautan spreadsheet sensus berhasil diperbarui.');
     handleSyncSensus(newUrl, true);
   };
+
+  // Sync Calendar / Agenda from CSV Google Sheets
+  const handleSyncCalendar = useCallback(async (customUrl?: string, isManualAction: boolean = false) => {
+    setIsSyncingCalendar(true);
+    try {
+      const targetUrl = customUrl || calendarCsvUrl;
+      const res = await fetchAgendasFromSpreadsheet(targetUrl, appsScriptUrl);
+      if (res.data && res.data.length > 0) {
+        setAgendas(res.data);
+        if (!res.usingMaster) {
+          localStorage.setItem(STORAGE_KEYS.LOCAL_AGENDA, JSON.stringify(res.data));
+        }
+      }
+      if (isManualAction && res.success) {
+        addToast('success', 'Agenda Kalender Disinkronkan', res.message);
+      }
+    } catch (err: any) {
+      console.warn('Sync calendar error:', err);
+    } finally {
+      setIsSyncingCalendar(false);
+    }
+  }, [calendarCsvUrl, appsScriptUrl, addToast]);
+
+  const handleSaveCalendarCsvUrl = (newUrl: string) => {
+    setCalendarCsvUrl(newUrl);
+    localStorage.setItem(STORAGE_KEYS.CALENDAR_CSV_URL, newUrl);
+    addToast('success', 'Tautan Kalender CSV Disimpan', 'Tautan publikasi spreadsheet agenda berhasil diperbarui.');
+    handleSyncCalendar(newUrl, true);
+  };
+
+  // Auto-sync calendar on mount (silent, tanpa popup toast mengganggu)
+  useEffect(() => {
+    handleSyncCalendar(undefined, false);
+  }, [handleSyncCalendar]);
 
   // Auto-sync sensus on mount (silent, tanpa popup toast)
   useEffect(() => {
@@ -336,12 +376,28 @@ export default function App() {
 
   // Proposal Submitted Handler
   const handleProposalSubmitted = (newProposal: ProposalItem) => {
-    setProposals((prev) => [newProposal, ...prev]);
+    setProposals((prev) => {
+      const updated = [newProposal, ...prev];
+      localStorage.setItem(STORAGE_KEYS.LOCAL_PROPOSALS, JSON.stringify(updated));
+      return updated;
+    });
     addToast(
       'success',
       'Proposal Berhasil Didaftarkan',
       `Tiket: ${newProposal.ticketNumber} • Berkas diunggah ke Google Drive.`
     );
+  };
+
+  // Delete Proposal Handler (Khusus Admin)
+  const handleDeleteProposal = (idOrTicket: string) => {
+    setProposals((prev) => {
+      const updated = prev.filter(
+        (item) => item.id !== idOrTicket && item.ticketNumber !== idOrTicket
+      );
+      localStorage.setItem(STORAGE_KEYS.LOCAL_PROPOSALS, JSON.stringify(updated));
+      return updated;
+    });
+    addToast('success', 'Proposal Dihapus', 'Pengajuan proposal telah dihapus dari antrean.');
   };
 
   // Reset / Sync Agenda to Master Handler
@@ -357,12 +413,26 @@ export default function App() {
 
   // Laporan Added Handler
   const handleLaporanAdded = (newLaporan: LaporanItem) => {
-    setLaporans((prev) => [newLaporan, ...prev]);
+    setLaporans((prev) => {
+      const updated = [newLaporan, ...prev];
+      localStorage.setItem(STORAGE_KEYS.LOCAL_LAPORAN, JSON.stringify(updated));
+      return updated;
+    });
     addToast(
       'success',
       'Laporan Berhasil Diunggah',
       `"${newLaporan.title}" telah tersimpan di repositori Google Drive.`
     );
+  };
+
+  // Delete Laporan Handler (Khusus Admin)
+  const handleDeleteLaporan = (id: string) => {
+    setLaporans((prev) => {
+      const updated = prev.filter((item) => item.id !== id);
+      localStorage.setItem(STORAGE_KEYS.LOCAL_LAPORAN, JSON.stringify(updated));
+      return updated;
+    });
+    addToast('success', 'Laporan Dihapus', 'Dokumen laporan berhasil dihapus dari sistem.');
   };
 
   // Update Proposal Status Handler
@@ -389,8 +459,8 @@ export default function App() {
       }
     }
 
-    setProposals((prev) =>
-      prev.map((item) =>
+    setProposals((prev) => {
+      const updated = prev.map((item) =>
         item.ticketNumber === ticketNumber
           ? {
               ...item,
@@ -399,8 +469,10 @@ export default function App() {
               updatedAt: new Date().toISOString(),
             }
           : item
-      )
-    );
+      );
+      localStorage.setItem(STORAGE_KEYS.LOCAL_PROPOSALS, JSON.stringify(updated));
+      return updated;
+    });
 
     addToast(
       'success',
@@ -468,7 +540,10 @@ export default function App() {
               agendas={agendas}
               onAddAgenda={handleAddAgenda}
               onResetToMasterAgenda={handleResetToMasterAgenda}
-              isSyncing={false}
+              onSyncCalendar={(url) => handleSyncCalendar(url, true)}
+              calendarCsvUrl={calendarCsvUrl}
+              onSaveCalendarCsvUrl={handleSaveCalendarCsvUrl}
+              isSyncing={isSyncingCalendar}
               isAuthenticated={!!adminUser}
               onOpenLogin={() => setIsAdminLoginModalOpen(true)}
             />
@@ -485,6 +560,7 @@ export default function App() {
             <CekProposalView
               proposals={proposals}
               onUpdateStatus={handleUpdateProposalStatus}
+              onDeleteProposal={handleDeleteProposal}
               onOpenAdminLogin={() => setIsAdminLoginModalOpen(true)}
               isAdminLoggedIn={!!adminUser}
             />
@@ -494,6 +570,7 @@ export default function App() {
             <LaporanView
               laporans={laporans}
               onLaporanAdded={handleLaporanAdded}
+              onDeleteLaporan={handleDeleteLaporan}
               appsScriptUrl={appsScriptUrl}
               isAdminLoggedIn={!!adminUser}
               onOpenAdminLogin={() => setIsAdminLoginModalOpen(true)}
@@ -522,6 +599,9 @@ export default function App() {
               onSaveAdminUser={handleSaveAdminUser}
               proposals={proposals}
               onUpdateProposalStatus={handleUpdateProposalStatus}
+              onDeleteProposal={handleDeleteProposal}
+              laporans={laporans}
+              onDeleteLaporan={handleDeleteLaporan}
               appsScriptUrl={appsScriptUrl}
               onSaveAppsScriptUrl={handleSaveAppsScriptUrl}
             />

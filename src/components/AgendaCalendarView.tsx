@@ -1,4 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -15,10 +18,20 @@ import {
   Printer,
   FileDown,
   RefreshCw,
-  Lock
+  Lock,
+  Table,
+  Search,
+  Layers,
+  Sparkles
 } from 'lucide-react';
 import { AgendaItem } from '../services/types';
-import { TANGERANG_OPD_LIST } from '../services/config';
+import { 
+  TANGERANG_OPD_LIST, 
+  KEGIATAN_PENANGGUNG_JAWAB_LIST, 
+  PENANGGUNG_JAWAB_STYLES, 
+  getPenanggungJawab, 
+  PenanggungJawabKegiatan 
+} from '../services/config';
 
 interface AgendaCalendarViewProps {
   agendas: AgendaItem[];
@@ -44,13 +57,21 @@ export const AgendaCalendarView: React.FC<AgendaCalendarViewProps> = ({
   const [selectedOpdFilter, setSelectedOpdFilter] = useState<string>('Semua');
   const [detailAgenda, setDetailAgenda] = useState<AgendaItem | null>(null);
 
+  // View Mode: 'both' | 'calendar' | 'table'
+  const [viewMode, setViewMode] = useState<'both' | 'calendar' | 'table'>('both');
+
+  // Filter Penanggung Jawab & Pencarian Tabel
+  const [selectedPjFilter, setSelectedPjFilter] = useState<'Semua' | PenanggungJawabKegiatan>('Semua');
+  const [searchKeyword, setSearchKeyword] = useState<string>('');
+  const [selectedTableMonth, setSelectedTableMonth] = useState<'Semua' | number>('Semua');
+
   // Form states
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('09:00');
   const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
-  const [opd, setOpd] = useState(TANGERANG_OPD_LIST[0]);
+  const [opd, setOpd] = useState<string>(KEGIATAN_PENANGGUNG_JAWAB_LIST[0]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
 
@@ -96,8 +117,8 @@ export const AgendaCalendarView: React.FC<AgendaCalendarViewProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !date || !time || !location.trim()) {
-      setFormError('Mohon lengkapi judul kegiatan, tanggal, jam, dan lokasi.');
+    if (!title.trim() || !date || !time) {
+      setFormError('Mohon lengkapi judul kegiatan, tanggal, dan jam.');
       return;
     }
 
@@ -108,7 +129,7 @@ export const AgendaCalendarView: React.FC<AgendaCalendarViewProps> = ({
         title: title.trim(),
         date,
         time,
-        location: location.trim(),
+        location: location.trim() || '-',
         description: description.trim(),
         opd,
       });
@@ -125,17 +146,181 @@ export const AgendaCalendarView: React.FC<AgendaCalendarViewProps> = ({
     }
   };
 
-  // Filter agendas
-  const filteredAgendas = agendas.filter((item) => {
-    if (selectedOpdFilter !== 'Semua' && item.opd !== selectedOpdFilter) {
-      return false;
+  // Filter agendas berdasarkan Penanggung Jawab, OPD, dan Pencarian
+  const filteredAgendas = useMemo(() => {
+    return agendas.filter((item) => {
+      // 1. Penanggung Jawab filter
+      const pj = getPenanggungJawab(item);
+      if (selectedPjFilter !== 'Semua' && pj !== selectedPjFilter) {
+        return false;
+      }
+
+      // 2. OPD filter if selected
+      if (selectedOpdFilter !== 'Semua' && item.opd !== selectedOpdFilter) {
+        return false;
+      }
+
+      // 3. Search Keyword
+      if (searchKeyword.trim()) {
+        const q = searchKeyword.toLowerCase();
+        const matches =
+          item.title.toLowerCase().includes(q) ||
+          item.location.toLowerCase().includes(q) ||
+          (item.description && item.description.toLowerCase().includes(q)) ||
+          pj.toLowerCase().includes(q);
+        if (!matches) return false;
+      }
+
+      return true;
+    });
+  }, [agendas, selectedPjFilter, selectedOpdFilter, searchKeyword]);
+
+  // Data terurut untuk Tabel Kegiatan
+  const tableAgendas = useMemo(() => {
+    let list = [...filteredAgendas];
+    if (selectedTableMonth !== 'Semua') {
+      const monthPrefix = `${year}-${String(Number(selectedTableMonth) + 1).padStart(2, '0')}`;
+      list = list.filter((a) => a.date.startsWith(monthPrefix));
     }
-    return true;
-  });
+    return list.sort((a, b) => {
+      const dateCmp = a.date.localeCompare(b.date);
+      if (dateCmp !== 0) return dateCmp;
+      return (a.time || '').localeCompare(b.time || '');
+    });
+  }, [filteredAgendas, selectedTableMonth, year]);
 
   // Print/Download agenda pdf helper
   const handlePrintAgenda = () => {
     window.print();
+  };
+
+  // Unduh Agenda dalam Format Excel (.xlsx)
+  const handleDownloadExcel = () => {
+    const rows = tableAgendas.map((item, idx) => {
+      const pj = getPenanggungJawab(item);
+      const itemDate = new Date(item.date);
+      const dayName = itemDate.toLocaleDateString('id-ID', { weekday: 'long' });
+      return {
+        'No': idx + 1,
+        'Tanggal': item.date,
+        'Hari': dayName,
+        'Waktu': `${item.time || '09:00'} WIB`,
+        'Penanggung Jawab': pj,
+        'Nama Kegiatan': item.title,
+        'Lokasi': item.location || '-',
+        'Keterangan': item.description || '-',
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+
+    // Auto-fit column widths
+    worksheet['!cols'] = [
+      { wch: 6 },
+      { wch: 14 },
+      { wch: 12 },
+      { wch: 14 },
+      { wch: 22 },
+      { wch: 42 },
+      { wch: 32 },
+      { wch: 45 },
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Agenda Kegiatan');
+
+    const monthLabel = selectedTableMonth !== 'Semua' ? `_${monthNames[selectedTableMonth]}` : `_Tahun_${year}`;
+    const pjLabel = selectedPjFilter !== 'Semua' ? `_${selectedPjFilter.replace(/\s+/g, '_')}` : '';
+    const fileName = `Agenda_Kegiatan${monthLabel}${pjLabel}.xlsx`;
+
+    XLSX.writeFile(workbook, fileName);
+  };
+
+  // Unduh Agenda dalam Format PDF (.pdf)
+  const handleDownloadPdf = () => {
+    const doc = new jsPDF('landscape', 'mm', 'a4');
+
+    const monthLabel = selectedTableMonth !== 'Semua' ? `${monthNames[selectedTableMonth]} ${year}` : `Semua Bulan (Tahun ${year})`;
+    const pjFilterLabel = selectedPjFilter !== 'Semua' ? ` • Filter: ${selectedPjFilter}` : '';
+
+    // Title & Header info
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text('AGENDA KEGIATAN DAERAH TANGERANG KOTA', 14, 15);
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Periode: ${monthLabel}${pjFilterLabel} | Total: ${tableAgendas.length} Kegiatan Terjadwal`, 14, 22);
+    doc.text(`Dicetak pada: ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })} WIB`, 14, 27);
+
+    // Prepare table data
+    const head = [['No', 'Tanggal', 'Hari & Waktu', 'Penanggung Jawab', 'Nama Kegiatan', 'Lokasi', 'Keterangan']];
+    const body = tableAgendas.map((item, idx) => {
+      const pj = getPenanggungJawab(item);
+      const itemDate = new Date(item.date);
+      const dayName = itemDate.toLocaleDateString('id-ID', { weekday: 'short' });
+      return [
+        (idx + 1).toString(),
+        item.date,
+        `${dayName}, ${item.time || '09:00'}`,
+        pj,
+        item.title,
+        item.location || '-',
+        item.description || '-',
+      ];
+    });
+
+    autoTable(doc, {
+      head: head as any,
+      body: body as any,
+      startY: 32,
+      theme: 'grid',
+      styles: {
+        fontSize: 8.5,
+        cellPadding: 2,
+        lineColor: [226, 232, 240],
+        lineWidth: 0.1,
+        textColor: [30, 41, 59],
+        overflow: 'linebreak',
+      },
+      headStyles: {
+        fillColor: [13, 148, 136],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        halign: 'left',
+      },
+      columnStyles: {
+        0: { cellWidth: 10, halign: 'center' },
+        1: { cellWidth: 24 },
+        2: { cellWidth: 26 },
+        3: { cellWidth: 35, fontStyle: 'bold' },
+        4: { cellWidth: 65 },
+        5: { cellWidth: 45 },
+        6: { cellWidth: 'auto' },
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252],
+      },
+      didDrawPage: (data) => {
+        const pageCount = (doc as any).internal.getNumberOfPages();
+        doc.setFontSize(8);
+        doc.setTextColor(148, 163, 184);
+        doc.text(
+          `Halaman ${data.pageNumber} dari ${pageCount} — Agenda & Administrasi Daerah Tangerang Kota`,
+          doc.internal.pageSize.width / 2,
+          doc.internal.pageSize.height - 7,
+          { align: 'center' }
+        );
+      },
+    });
+
+    const monthFileSuffix = selectedTableMonth !== 'Semua' ? `_${monthNames[selectedTableMonth]}` : `_Tahun_${year}`;
+    const pjFileSuffix = selectedPjFilter !== 'Semua' ? `_${selectedPjFilter.replace(/\s+/g, '_')}` : '';
+    const fileName = `Agenda_Kegiatan${monthFileSuffix}${pjFileSuffix}.pdf`;
+
+    doc.save(fileName);
   };
 
   return (
@@ -158,32 +343,70 @@ export const AgendaCalendarView: React.FC<AgendaCalendarViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* OPD Filter */}
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-slate-400" />
-            <select
-              value={selectedOpdFilter}
-              onChange={(e) => setSelectedOpdFilter(e.target.value)}
-              className="text-xs font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 focus:ring-2 focus:ring-blue-500/20 focus:outline-hidden"
+          {/* View Mode Toggle: Kalender vs Tabel */}
+          <div className="flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200 print:hidden">
+            <button
+              type="button"
+              onClick={() => setViewMode('both')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                viewMode === 'both' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
             >
-              <option value="Semua">Semua OPD / Instansi</option>
-              {TANGERANG_OPD_LIST.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
+              <Layers className="w-3.5 h-3.5" />
+              <span>Kalender & Tabel</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('calendar')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                viewMode === 'calendar' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <CalendarIcon className="w-3.5 h-3.5" />
+              <span>Kalender</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                viewMode === 'table' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Table className="w-3.5 h-3.5" />
+              <span>Tabel Kegiatan</span>
+            </button>
           </div>
+
+          {/* Tombol Unduh Excel & PDF */}
+          <button
+            type="button"
+            onClick={handleDownloadExcel}
+            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-2xs transition-colors cursor-pointer"
+            title="Unduh Agenda dalam format Microsoft Excel (.xlsx)"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Unduh Excel</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            className="flex items-center gap-1.5 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg shadow-2xs transition-colors cursor-pointer"
+            title="Unduh Agenda dalam format Dokumen PDF (.pdf)"
+          >
+            <FileDown className="w-4 h-4" />
+            <span>Unduh PDF</span>
+          </button>
 
           {/* Cetak Agenda Button */}
           <button
             type="button"
             onClick={handlePrintAgenda}
             className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-            title="Cetak atau Simpan Kalender sebagai PDF"
+            title="Cetak langsung lewat printer"
           >
             <Printer className="w-4 h-4 text-slate-600" />
-            <span>Cetak / PDF</span>
+            <span>Cetak</span>
           </button>
 
           {/* Sync / Reset Master Button */}
@@ -216,6 +439,82 @@ export const AgendaCalendarView: React.FC<AgendaCalendarViewProps> = ({
             {isAuthenticated ? <Plus className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
             {isAuthenticated ? 'Tambah Agenda' : 'Tambah Agenda (Admin)'}
           </button>
+        </div>
+      </div>
+
+      {/* 8 Penanggung Jawab Interactive Color Legend & Filter Pills */}
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3 print:hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-teal-500 animate-pulse" />
+              <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">
+                Penanggung Jawab Kegiatan (Warna Khusus Tiap Instansi)
+              </h4>
+            </div>
+            <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+              Klik salah satu tombol untuk memfilter kegiatan di Kalender dan Tabel Kegiatan
+            </p>
+          </div>
+
+          {selectedPjFilter !== 'Semua' && (
+            <button
+              type="button"
+              onClick={() => setSelectedPjFilter('Semua')}
+              className="text-xs font-bold text-teal-700 hover:text-teal-900 bg-teal-50 px-2.5 py-1 rounded-lg border border-teal-200 cursor-pointer self-start sm:self-auto"
+            >
+              Tampilkan Semua Kegiatan ({agendas.length})
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {/* Tombol Semua */}
+          <button
+            type="button"
+            onClick={() => setSelectedPjFilter('Semua')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border ${
+              selectedPjFilter === 'Semua'
+                ? 'bg-slate-900 text-white border-slate-900 shadow-xs ring-2 ring-slate-900/20'
+                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            <span>Semua Penanggung Jawab</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200/60 font-mono">
+              {agendas.length}
+            </span>
+          </button>
+
+          {/* 8 Penanggung Jawab dengan Warna Masing-Masing */}
+          {KEGIATAN_PENANGGUNG_JAWAB_LIST.map((pj) => {
+            const style = PENANGGUNG_JAWAB_STYLES[pj];
+            const isSelected = selectedPjFilter === pj;
+            const count = agendas.filter((a) => getPenanggungJawab(a) === pj).length;
+
+            return (
+              <button
+                key={pj}
+                type="button"
+                onClick={() => setSelectedPjFilter(isSelected ? 'Semua' : pj)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border shadow-2xs ${
+                  isSelected
+                    ? `${style.accentBg} text-white border-transparent shadow-sm ring-2 ring-offset-1`
+                    : `${style.badgeBg} ${style.badgeText} ${style.borderColor} hover:brightness-95`
+                }`}
+                title={`Filter kegiatan penanggung jawab: ${pj}`}
+              >
+                <span className={`w-2.5 h-2.5 rounded-full ${isSelected ? 'bg-white' : style.dotColor}`} />
+                <span>{pj}</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                    isSelected ? 'bg-white/20 text-white' : 'bg-black/5'
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -261,7 +560,8 @@ export const AgendaCalendarView: React.FC<AgendaCalendarViewProps> = ({
       </div>
 
       {/* Calendar Card */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden print:border-none print:shadow-none">
+      {(viewMode === 'calendar' || viewMode === 'both') && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden print:border-none print:shadow-none">
         {/* Month Navigation Bar */}
         <div className="p-4 sm:px-6 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -354,22 +654,27 @@ export const AgendaCalendarView: React.FC<AgendaCalendarViewProps> = ({
                   )}
                 </div>
 
-                {/* Event tags list */}
+                {/* Event tags list with Penanggung Jawab specific colors */}
                 <div className="space-y-1 overflow-y-auto max-h-16 flex-1">
-                  {dayAgendas.slice(0, 2).map((ev) => (
-                    <div
-                      key={ev.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDetailAgenda(ev);
-                      }}
-                      className="text-[10px] p-1 rounded bg-teal-50 border border-teal-200/80 text-teal-900 truncate font-medium hover:bg-teal-100 transition-colors"
-                      title={`${ev.time} - ${ev.title} (${ev.location})`}
-                    >
-                      <span className="font-bold text-teal-700 mr-1">{ev.time}</span>
-                      {ev.title}
-                    </div>
-                  ))}
+                  {dayAgendas.slice(0, 2).map((ev) => {
+                    const pj = getPenanggungJawab(ev);
+                    const style = PENANGGUNG_JAWAB_STYLES[pj];
+                    return (
+                      <div
+                        key={ev.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDetailAgenda(ev);
+                        }}
+                        className={`text-[10px] p-1 rounded border truncate font-medium transition-colors ${style.calendarChipBg} ${style.calendarChipBorder} ${style.calendarChipText} hover:brightness-95 flex items-center gap-1`}
+                        title={`${ev.time} - [${pj}] ${ev.title} (${ev.location})`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${style.dotColor}`} />
+                        <span className="font-bold shrink-0">{ev.time}</span>
+                        <span className="truncate">{ev.title}</span>
+                      </div>
+                    );
+                  })}
                   {dayAgendas.length > 2 && (
                     <div className="text-[9px] text-slate-500 font-semibold pl-1">
                       +{dayAgendas.length - 2} kegiatan lainnya
@@ -397,6 +702,175 @@ export const AgendaCalendarView: React.FC<AgendaCalendarViewProps> = ({
           </div>
         )}
       </div>
+      )}
+
+      {/* Tabel Kegiatan Komprehensif (Warna Berbeda Sesuai Penanggung Jawab) */}
+      {(viewMode === 'table' || viewMode === 'both') && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden print:border-none">
+          {/* Header Tabel */}
+          <div className="p-4 sm:px-6 bg-slate-50/80 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                  <Table className="w-4 h-4 text-teal-600" />
+                  <span>Tabel Kegiatan Daerah</span>
+                </h3>
+                <span className="text-xs font-bold text-teal-700 bg-teal-50 px-2.5 py-0.5 rounded-full border border-teal-200">
+                  {tableAgendas.length} Kegiatan
+                </span>
+                {selectedPjFilter !== 'Semua' && (
+                  <span
+                    className={`text-xs font-bold px-2 py-0.5 rounded-full border ${PENANGGUNG_JAWAB_STYLES[selectedPjFilter].badgeBg} ${PENANGGUNG_JAWAB_STYLES[selectedPjFilter].badgeText} ${PENANGGUNG_JAWAB_STYLES[selectedPjFilter].borderColor}`}
+                  >
+                    Filter: {selectedPjFilter}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Daftar agenda kegiatan lengkap dengan kode warna khusus untuk 9 penanggung jawab (Kelompok, Desa, PPG, Yayasan dan Sekolah, Pusat, Senkom, DPD, Forsgi, Daerah)
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 print:hidden">
+              {/* Tombol Cepat Unduh Excel & PDF di Header Tabel */}
+              <button
+                type="button"
+                onClick={handleDownloadExcel}
+                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold rounded-xl transition-colors cursor-pointer shadow-2xs"
+                title="Unduh data tabel dalam format Excel (.xlsx)"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Excel</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold rounded-xl transition-colors cursor-pointer shadow-2xs"
+                title="Unduh data tabel dalam format PDF (.pdf)"
+              >
+                <FileDown className="w-3.5 h-3.5 text-rose-600" />
+                <span>PDF</span>
+              </button>
+
+              {/* Filter Bulan Dropdown di Tabel */}
+              <select
+                value={selectedTableMonth}
+                onChange={(e) => setSelectedTableMonth(e.target.value === 'Semua' ? 'Semua' : Number(e.target.value))}
+                className="text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-2xs focus:ring-2 focus:ring-teal-500/20 focus:outline-hidden"
+              >
+                <option value="Semua">Semua Bulan ({year})</option>
+                {monthNames.map((mName, mIdx) => (
+                  <option key={mName} value={mIdx}>
+                    {mName} {year}
+                  </option>
+                ))}
+              </select>
+
+              {/* Input Pencarian */}
+              <div className="relative min-w-56">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  value={searchKeyword}
+                  onChange={(e) => setSearchKeyword(e.target.value)}
+                  placeholder="Cari kegiatan, lokasi..."
+                  className="w-full text-xs font-medium pl-8 pr-3 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:outline-hidden shadow-2xs"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Tabel Data */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-100/70 border-b border-slate-200 text-slate-600 font-bold">
+                  <th className="py-3 px-4 w-12 text-center">No</th>
+                  <th className="py-3 px-4 min-w-40">Tanggal & Waktu</th>
+                  <th className="py-3 px-4 min-w-44">Penanggung Jawab</th>
+                  <th className="py-3 px-4 min-w-64">Nama Kegiatan</th>
+                  <th className="py-3 px-4 min-w-44">Lokasi</th>
+                  <th className="py-3 px-4 min-w-48">Keterangan</th>
+                  <th className="py-3 px-4 w-20 text-center print:hidden">Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {tableAgendas.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-slate-400">
+                      <p className="font-semibold text-slate-600">Tidak ada kegiatan yang ditemukan.</p>
+                      <p className="text-xs mt-1">Coba sesuaikan kata kunci pencarian atau filter penanggung jawab.</p>
+                    </td>
+                  </tr>
+                ) : (
+                  tableAgendas.map((item, idx) => {
+                    const pj = getPenanggungJawab(item);
+                    const style = PENANGGUNG_JAWAB_STYLES[pj];
+                    const itemDate = new Date(item.date);
+                    const formattedDate = itemDate.toLocaleDateString('id-ID', {
+                      weekday: 'short',
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                    });
+
+                    return (
+                      <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3 px-4 text-center font-mono text-slate-400 font-semibold">
+                          {idx + 1}
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <div className="font-bold text-slate-800">{formattedDate}</div>
+                          <div className="text-[11px] text-slate-500 flex items-center gap-1 font-semibold mt-0.5">
+                            <Clock className="w-3 h-3 text-slate-400" />
+                            <span>{item.time || '09:00'} WIB</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border shadow-2xs ${style.badgeBg} ${style.badgeText} ${style.borderColor}`}
+                          >
+                            <span className={`w-2 h-2 rounded-full ${style.dotColor}`} />
+                            <span>{pj}</span>
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-900 text-xs sm:text-sm">
+                            {item.title}
+                          </div>
+                          {item.opd && item.opd !== pj && (
+                            <div className="text-[10px] text-slate-400 font-medium truncate max-w-xs mt-0.5">
+                              {item.opd}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-slate-600">
+                          <div className="flex items-center gap-1">
+                            <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span className="truncate max-w-xs">{item.location}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-slate-500 max-w-xs">
+                          <p className="line-clamp-2 text-[11px]">{item.description || '-'}</p>
+                        </td>
+                        <td className="py-3 px-4 text-center whitespace-nowrap print:hidden">
+                          <button
+                            type="button"
+                            onClick={() => setDetailAgenda(item)}
+                            className="px-2.5 py-1 text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-lg transition-colors cursor-pointer"
+                          >
+                            Detail
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Modal: Detail Agenda */}
       {detailAgenda && (
@@ -439,9 +913,24 @@ export const AgendaCalendarView: React.FC<AgendaCalendarViewProps> = ({
                 <span>{detailAgenda.location}</span>
               </div>
 
-              <div className="flex items-center gap-2 text-teal-800 font-medium">
-                <Building2 className="w-4 h-4 text-teal-600 shrink-0" />
-                <span>{detailAgenda.opd}</span>
+              <div className="flex items-center gap-2">
+                {(() => {
+                  const pj = getPenanggungJawab(detailAgenda);
+                  const style = PENANGGUNG_JAWAB_STYLES[pj];
+                  return (
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${style.badgeBg} ${style.badgeText} ${style.borderColor}`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${style.dotColor}`} />
+                      <span>{pj}</span>
+                    </span>
+                  );
+                })()}
+                {detailAgenda.opd && (
+                  <span className="text-slate-500 text-xs font-medium truncate">
+                    ({detailAgenda.opd})
+                  </span>
+                )}
               </div>
 
               {detailAgenda.description && (
@@ -553,16 +1042,15 @@ export const AgendaCalendarView: React.FC<AgendaCalendarViewProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Lokasi / Ruang Pertemuan <span className="text-rose-500">*</span>
+                  Lokasi / Ruang Pertemuan <span className="text-slate-400 font-normal">(Opsional)</span>
                 </label>
                 <div className="relative">
                   <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                   <input
                     type="text"
-                    required
                     value={location}
                     onChange={(e) => setLocation(e.target.value)}
-                    placeholder="Contoh: Ruang Akhlakul Karimah, Lt. 2 Puspem Kota Tangerang"
+                    placeholder="Contoh: Gedung Daerah, Masjid, atau biarkan kosong jika belum ditentukan"
                     className="w-full text-xs font-medium pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:outline-hidden"
                   />
                 </div>
@@ -570,14 +1058,14 @@ export const AgendaCalendarView: React.FC<AgendaCalendarViewProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  OPD / Penanggung Jawab <span className="text-rose-500">*</span>
+                  Penanggung Jawab / Tingkat Kegiatan <span className="text-rose-500">*</span>
                 </label>
                 <select
                   value={opd}
                   onChange={(e) => setOpd(e.target.value)}
                   className="w-full text-xs font-medium p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:outline-hidden"
                 >
-                  {TANGERANG_OPD_LIST.map((item) => (
+                  {KEGIATAN_PENANGGUNG_JAWAB_LIST.map((item) => (
                     <option key={item} value={item}>
                       {item}
                     </option>

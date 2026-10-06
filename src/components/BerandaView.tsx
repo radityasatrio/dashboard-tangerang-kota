@@ -22,6 +22,7 @@ import { AgendaItem, ProposalItem, LaporanItem } from '../services/types';
 import { SensusJamaahItem } from '../services/sensusData';
 import { TabKey } from './Sidebar';
 import { LaporanStatusDonutChart } from './LaporanStatusDonutChart';
+import { getPenanggungJawab, PENANGGUNG_JAWAB_STYLES } from '../services/config';
 
 interface BerandaViewProps {
   agendas: AgendaItem[];
@@ -572,9 +573,25 @@ export const BerandaView: React.FC<BerandaViewProps> = ({
                           </span>
                         </div>
 
-                        <span className="inline-block mt-0.5 text-[10px] font-semibold text-slate-500">
-                          {item.opd}
-                        </span>
+                        <div className="flex items-center gap-2 mt-1">
+                          {(() => {
+                            const pj = getPenanggungJawab(item);
+                            const style = PENANGGUNG_JAWAB_STYLES[pj];
+                            return (
+                              <span
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border shadow-2xs ${style.badgeBg} ${style.badgeText} ${style.borderColor}`}
+                              >
+                                <span className={`w-1.5 h-1.5 rounded-full ${style.dotColor}`} />
+                                <span>{pj}</span>
+                              </span>
+                            );
+                          })()}
+                          {item.opd && item.opd !== getPenanggungJawab(item) && (
+                            <span className="text-[10px] font-semibold text-slate-400 truncate max-w-40">
+                              {item.opd}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
